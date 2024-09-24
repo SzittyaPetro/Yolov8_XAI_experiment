@@ -1,0 +1,12 @@
+path: D:/Uni/Yolov8/data/gtFine
+train: ./train.txt
+val: ./val.txt
+test: ./test.txt
+
+# class names
+names: 
+  0: 'small_vehicle'
+  1: 'person'
+  2: 'large_vehicle'
+  3: 'two-wheeler'
+  4: 'On-rails'

@@ -1,0 +1,6 @@
+[submodule "MEigenCAM"]
+	path = MEigenCAM
+	url = https://github.com/SzittyaPetro/MEigenCAM.git
+[submodule "myshap/shap"]
+	path = myshap/shap
+	url = https://github.com/SzittyaPetro/Yolov8_XAI_experiment.git
