@@ -1,102 +1,115 @@
-import cv2
+from pathlib import Path
 from lime import lime_image
-from matplotlib import pyplot as plt
-from ultralytics import YOLO
-
-import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
 from skimage.segmentation import mark_boundaries
+import matplotlib as mpl
+mpl.rc('figure', max_open_warning = 0)
 
 
-def load_images_from_paths(image_paths):
+detector1=None
+
+# https://github.com/akshay-gupta123/Face-Mask-Detection
+
+def lime_result(model_name,model, batch_predict,output_paths, paths, num_samples=200, num_features=10):
     """
-    Load images from file paths
-    :param image_paths:
-    :return:
+    Generate LIME explanations for a set of images using a specified model and prediction function.
+
+    Args:
+        model (str): The name of the model used for generating explanations.
+        batch_predict (function): The function used to predict the output for a batch of images.
+        paths (list): List of file paths to the images.
+        num_samples (int, optional): The number of samples to generate for LIME. Default is 200.
+        num_features (int, optional): The number of features to include in the explanation. Default is 10.
+
+    Returns:
+        None
     """
-    # Define a function to load images from file paths
-    images = []
-    for path in image_paths:
-        image = Image.open(path)
-        images.append(np.array(image))
-    return images
+    global detector1
+    # lime explainer
+    explainer = lime_image.LimeImageExplainer()
+    detector1 = model
+    for i, path in enumerate(paths):
+        img = Image.open(path)
+        img = img.resize((448,448))
+
+        explanation = explainer.explain_instance(np.array(img), batch_predict, top_labels=5, hide_color=0,
+                                                 num_samples=num_samples)
+
+        temp, mask = explanation.get_image_and_mask(explanation.top_labels[0], positive_only=True,
+                                                    num_features=num_features, hide_rest=False)
+        img_boundry1 = mark_boundaries(temp / 255.0, mask)
+
+        temp, mask = explanation.get_image_and_mask(explanation.top_labels[0], positive_only=False,
+                                                    num_features=num_features, hide_rest=False)
+        img_boundry2 = mark_boundaries(temp / 255.0, mask)
+
+        f, axarr = plt.subplots(1, 2)
+        axarr[0].imshow(img_boundry1)
+        axarr[1].imshow(img_boundry2)
+        output= f'{output_paths}/{Path(model_name).name}_{Path(path).name}.jpg'
+        plt.savefig(output)
 
 
-def add_border_to_image(im, border_type=cv2.BORDER_CONSTANT, value=[0, 0, 0]):
+def Yolo_sum(images):
     """
-    Add border to the image with specified border sizes and type.
-    :param im: Source image
-    :param border_type: Type of the border (default is cv2.BORDER_CONSTANT)
-    :param value: Border color (default is black)
-    :return: Image with border added
+    Summarize YOLO model predictions for a batch of images.
+
+    This function processes a list of images using a YOLO model and calculates the average confidence score for each image. The results are returned as an array of predictions.
+
+    Args:
+        images (list): List of images to be processed.
+
+    Returns:
+        np.ndarray: Array of predictions, where each prediction is a list containing the average confidence score and its complement.
     """
-    #if im.ndim > 2:
-    #    raise ValueError("Source image must have 2 or fewer dimensions")
+    global detector1
+    pred = []
+    for image in images:
+        sum = 0
+        logits = detector1(image)
+        if isinstance(logits, list):
+            logits = logits[0]  # Assuming the first element is the `Results` object
+        boxes = logits.boxes
+        if boxes is not None:
+            conf_scores = boxes.conf  # Access the confidence scores
+            result = np.array(conf_scores)
+            for i in result:
+                sum += i
+            sum = sum / len(result) if len(result) else 0
+        pred.append([sum, 1 - sum])
+    return np.array(pred)
 
-    row, col = im.shape[:2]
-    bottom = im[row-2:row, 0:col]
-    mean = cv2.mean(bottom)[0]
 
-    border_size = 10
-    return cv2.copyMakeBorder(
-        im,
-        top=border_size,
-        bottom=border_size,
-        left=border_size,
-        right=border_size,
-        borderType=cv2.BORDER_CONSTANT,
-        value=[mean, mean, mean]
-    )
-
-
-class YoloLimeExplainer:
+def Yolo_multi(images):
     """
-    YoloLimeExplainer is a class that provides functionality to explain YOLO model predictions using LIME (Local Interpretable Model-agnostic Explanations).
+    Summarize YOLO model predictions for a batch of images with multiple confidence scores.
+
+    This function processes a list of images using a YOLO model and calculates multiple confidence scores for each image. The results are returned as an array of predictions.
+
+    Args:
+        images (list): List of images to be processed.
+
+    Returns:
+        np.ndarray: Array of predictions, where each prediction is a list containing multiple confidence scores and their complements.
     """
-
-    def __init__(self, model):
-        """
-        Initialize LIME explainer and passing of the YOLO model
-        """
-        self.model = model
-        self.explainer = lime_image.LimeImageExplainer()
-
-    def yolo_segmentation_predict(self, images):
-        """Used for generating predictions with the given YOLO model"""
-        results = self.model(images)
-        segmented_images = []
-        for result in results:
-            segmented_images.append(result.masks.data.cpu().numpy())
-        return segmented_images
-
-    def explain_instance(self, image, predict_fn, top_labels=5, hide_color=0, num_samples=1000):
-        """
-        Explain the instance using LIME for the provided image.
-        :param image: The image to be explained.
-        :param predict_fn: The prediction function to be used by LIME.
-        :param top_labels: The number of top labels to be explained.
-        :param hide_color: The color to hide the superpixels.
-        :param num_samples: The number of samples to be used by LIME.
-        """
-        output_dir_path = image.parent / "explain_output" / "LIME"
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_file_path = output_dir_path / f"{image.name}_lime_explanation.png"
-
-        val_images = load_images_from_paths([image])
-        image_with_border = add_border_to_image(np.array(val_images[0]))  # Add border
-
-        print(f"Image shape before adding border: {np.array(val_images[0]).shape}")
-        print(f"Image shape after adding border: {image_with_border.shape}")
-
-        explanation = self.explainer.explain_instance(image_with_border, predict_fn,
-                                                      top_labels=top_labels,
-                                                      hide_color=hide_color, num_samples=num_samples)
-
-        temp, mask = explanation.get_image_and_mask(explanation.top_labels[0], positive_only=True, num_features=5,
-                                                    hide_rest=True)
-        sample_image_with_mask = mark_boundaries(temp / 2 + 0.5, mask)
-
-        plt.imsave(output_file_path, sample_image_with_mask)
-
-    def __call__(self, image, predict_fn, top_labels=5, hide_color=0, num_samples=1000):
-        self.explain_instance(image, predict_fn, top_labels, hide_color, num_samples)
+    pred = []
+    for num, image in enumerate(images):
+        results = []
+        logits = detector1(image)
+        if isinstance(logits, list):
+            logits = logits[0]  # Assuming the first element is the `Results` object
+        boxes = logits.boxes
+        if boxes is not None:
+            conf_scores = boxes.conf  # Access the confidence scores
+            result = np.array(conf_scores)
+            for i in result:
+                results.append(i)
+                results.append(1 - i)
+        pred.append(results)
+    np_result = np.zeros((len(images), 100))
+    for i in range(len(images)):
+        size = len(pred[i]) if len(pred[i]) <= 100 else 100
+        np_result[i, :size] = pred[i][:size]
+    return np_result

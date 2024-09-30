@@ -5,9 +5,12 @@ import numpy as np
 import logging
 from ultralytics import YOLO
 from MEigenCAM.yolov8_cam.eigen_cam import EigenCAM
-from MEigenCam.yolov8_cam.utils.image import show_cam_on_image  # noqa
-from LIME import YoloLimeExplainer
+from MEigenCAM.yolov8_cam.utils.image import show_cam_on_image  # noqa
+from LIME import lime_result, Yolo_sum, Yolo_multi
 from comet_ml import API
+
+from EigenGradCAM import yolov8_heatmap
+from MEigenCAM.yolov8_cam.utils.utils import display_images, save_images
 
 from SHAP import explain_image_with_shap
 
@@ -109,14 +112,39 @@ def process_image(file_path: Path, model):
     :param model: YOLO model.
     """
 
-    # Initialize LIME explainer
-    # lime_explain = YoloLimeExplainer(model=model)
-
     # Process LIME
-    # lime_explain(image=file_path, predict_fn=lime_explain.yolo_segmentation_predict)
-    explain_image_with_shap(file_path, model, "D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-14870.onnx")
+    lime_result(model=model,model_name=model.model_name, batch_predict=Yolo_sum, output_paths="output/explain/LIME", paths=[file_path], num_samples=200,num_features=10)
+    lime_result(model=model,model_name=model.model_name, batch_predict=Yolo_multi, output_paths="output/explain/LIME", paths=[file_path],
+                num_samples=200, num_features=10)
+
+    #explain_image_with_shap(file_path,"D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-14870.onnx")
+    #if not Path("D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/yolov8m.onnx").exists():
+        #model.export( format="onnx" )
+    #explain_image_with_shap(file_path, "D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/yolov8m.onnx")
+
+
+
+    GRADmodel = yolov8_heatmap(
+        #weight="D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-14870.pt",
+        weight="D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/yolov8m.pt",
+        conf_threshold=0.4,
+        device="cpu",
+        method="EigenGradCAM",
+        layer=[-7, -6, -5, -4, -3, -2],
+        ratio=0.02,
+        show_box=True,
+        renormalize=False,
+    )
+
+    imagelist = GRADmodel(
+        img_path=file_path,
+    )
+
+    save_images(file_path,imagelist,output_dir="output/explain/EigenGradCAM")
+
     # Process EigenCAM
     process_eigen_cam(file_path, model)
+
 
 
 def main(arguments):
@@ -130,7 +158,7 @@ def main(arguments):
                                          "best.pt")
         model = YOLO(model_file_path)
     else:
-        model = YOLO("models/best-14870.pt")
+        model = YOLO("models/yolov8m.pt")
     # Specify the output directory
     output_dir = Path("./output/explain")
     output_dir.mkdir(parents=True, exist_ok=True)

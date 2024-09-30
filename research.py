@@ -1,88 +1,267 @@
-import matplotlib.pylab as pl
+import random
+from glob import glob
+import torch
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import shap
-from PIL import Image
-from skimage.segmentation import slic
-from torchvision.transforms import transforms
-
+import torchvision
+import cv2
+from utils.general import non_max_suppression, box_iou
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+import time
 from ultralytics import YOLO
 
-feature_names = ['small_vehicle', 'person', 'large_vehicle', 'two-wheeler', 'On-rails']
+def rgb2gray(rgb):
+    return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
+
+model = YOLO("./models/yolov8m.pt").float()
 
 
-# define a function that depends on a binary mask representing if an image region is hidden
-def mask_image(zs, segmentation, image, background=None):
-    if background is None:
-        background = image.mean((0, 1))
-    out = np.zeros((zs.shape[0], image.shape[0], image.shape[1], image.shape[2]))
-    for i in range(zs.shape[0]):
-        out[i, :, :, :] = image
-        for j in range(zs.shape[1]):
-            if zs[i, j] == 0:
-                out[i][segmentation == j, :] = background
-    return out
+
+def image_processing(path, img_size, show_image_processing=0):
+    img_org = cv2.imread(path, cv2.IMREAD_COLOR)
+    img_org = cv2.cvtColor(img_org, cv2.COLOR_BGR2RGB)
+    old_img_size = img_org.shape[:2]  # old size is in (height, width) format
+
+    ratio = float(img_size) / max(old_img_size)
+    new_size_y, new_size_x = tuple([int(x * ratio) for x in old_img_size])
+    img = cv2.resize(img_org, (new_size_x, new_size_y))
+
+    delta_w = img_size - new_size_x
+    delta_h = img_size - new_size_y
+    top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+    left, right = delta_w // 2, delta_w - (delta_w // 2)
+
+    color = [0, 0, 0]
+    # for making a square image as model expects
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+
+    img = img.astype("float64") / 255
+    img_gray = rgb2gray(img)
+
+    if show_image_processing:
+        plt.figure(figsize=(15, 15))
+        plt.imshow(img_org)
+        plt.show()
+
+        fig = plt.figure(figsize=(20, 40))
+        plt.subplot(1, 2, 1)
+        plt.imshow(img)
+        plt.subplot(1, 2, 2)
+        plt.imshow(img_gray, cmap='gray', vmin=0, vmax=1)
+        plt.show()
+    return img_org, img, img_gray
+#img_org,img_pre,img_gray=image_processing('./data/gtFine/images/test/bonn/bonn_000000_000019_leftImg8bit.png',10*32,1)
 
 
-def f(z):
-    return model.predict(mask_image(z, segments_slic, img_orig, 255))[0]
+def model_processing(img, confidence, iou, show_yolo_result=0):
+    torch_image = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1))).to(device).unsqueeze(0)
+    prediction = model(torch_image)  # This will return a Results object in YOLOv8
+
+    # Extract the necessary information (bounding boxes and class predictions) from Results object
+    boxes = prediction[0].boxes  # This will contain the bounding box information
+    if boxes is None:
+        return None, None
+
+    # Extract the tensor containing the bounding boxes and their respective scores
+    box_tensor = boxes.xyxy  # [x1, y1, x2, y2] format
+    conf_tensor = boxes.conf  # Confidence scores
+    class_tensor = boxes.cls  # Class predictions
+
+    # Convert the Results object to a format suitable for non-max suppression
+    # Stack box coordinates, confidence, and class predictions
+    prediction_tensor = torch.cat((box_tensor, conf_tensor.unsqueeze(1), class_tensor.unsqueeze(1)), dim=1)
+
+    # Run non-max suppression on the extracted bounding boxes
+    output = non_max_suppression(prediction_tensor, conf_thres=confidence, iou_thres=iou)
+
+    if show_yolo_result:
+        fig = plt.figure(figsize=(15, 15))
+        ax = fig.add_subplot(1, 1, 1)
+
+        plt.imshow(img)
+        for i, detection in enumerate(output[0].cpu().numpy()):
+            label = f"{model.names[int(detection[5])]} {detection[4]:0.1%} ({i})"
+            bbox = patches.Rectangle(detection[:2], detection[2] - detection[0], detection[3] - detection[1],
+                                     linewidth=3, edgecolor='g', facecolor='none')
+            plt.text(detection[0], detection[1], label, color="red")
+            ax.add_patch(bbox)
+        plt.show()
+
+    return output, prediction
+
+class CastNumpy(torch.nn.Module):
+    def __init__(self):
+        super(CastNumpy, self).__init__()
+
+    def forward(self, image):
+        # In the forward function we accept the inputs and cast them to a pytorch tensor
+        image = np.ascontiguousarray(image)
+        image = torch.from_numpy(image).to(device)
+        if image.ndimension() == 3:
+            image = image.unsqueeze(0)
+        return image
 
 
-model = YOLO('./models/best-14870.pt')  # Load the YOLOv8m-seg model
-
-# load an image
-file = "./data/gtFine/images/test/bielefeld/bielefeld_000000_000321_leftImg8bit.png"
-
-# Load and preprocess the image
-img = Image.open(file).convert('RGB')
-transform = transforms.Compose([
-    transforms.Resize((640, 640)),
-    transforms.ToTensor()
-])
-img_orig = transform(img).unsqueeze(0)  # Add batch dimension
-
-# segment the image, so we don't have to explain every pixel
-segments_slic = slic(img_orig, n_segments=50, compactness=30, sigma=3)
-
-# use Kernel SHAP to explain the network's predictions
-explainer = shap.KernelExplainer(f, np.zeros((1, 50)))
-shap_values = explainer.shap_values(np.ones((1, 50)), nsamples=1000)
-
-# get the top predictions from the model
-preds = model.predict(np.expand_dims(img_orig.copy(), axis=0))
-top_preds = np.argsort(-preds[0].numpy())
-# Load the YOLO model
 
 
-# make a color map
-from matplotlib.colors import LinearSegmentedColormap
 
-colors = []
-for l in np.linspace(1, 0, 100):
-    colors.append((245 / 255, 39 / 255, 87 / 255, l))
-for l in np.linspace(0, 1, 100):
-    colors.append((24 / 255, 196 / 255, 93 / 255, l))
-cm = LinearSegmentedColormap.from_list("shap", colors)
+class OD2Score(torch.nn.Module):
+    def __init__(self, target, conf_thresh=0.01, iou_thresh=0.5):
+        super(OD2Score, self).__init__()
+        self.conf_thresh = conf_thresh
+        self.iou_thresh = iou_thresh
+        self.target = torch.tensor(target, device=device)
+
+    def forward(self, x):
+        # In the forward function we accept the predictions and return the score for a selected target of the box
+        score_best_box = torch.zeros([len(x)], device=device)
+
+        for idx, prediction in enumerate(x):
+            boxes = prediction.boxes  # Access the bounding boxes
+            if boxes is None:
+                continue
+
+            # Extract the tensor containing the bounding boxes and their respective scores
+            box_tensor = boxes.xyxy  # [x1, y1, x2, y2] format
+            conf_tensor = boxes.conf  # Confidence scores
+            class_tensor = boxes.cls  # Class predictions
+
+            # Convert the Results object to a format suitable for non-max suppression
+            prediction_tensor = torch.cat((box_tensor, conf_tensor.unsqueeze(1), class_tensor.unsqueeze(1)), dim=1)
+
+            output = non_max_suppression(prediction_tensor, conf_thres=self.conf_thresh, iou_thres=self.iou_thresh)
+            if output and output[0] is not None:
+                correct_class_predictions = output[0][..., 5] == self.target[5]
+                correctly_labeled_boxes = output[0][correct_class_predictions]
+
+                if correctly_labeled_boxes.shape[0]:
+                    iou_with_target, _idx = box_iou(correctly_labeled_boxes[:, :4],
+                                                    self.target.unsqueeze(0)[:, :4]).max(1)
+                    index_best_box_in_correct_class = torch.argmax(iou_with_target)
+                    index_best_box_in_output = torch.where(output[0][..., 5] == self.target[5])[0][
+                        index_best_box_in_correct_class]
+
+                    score_best_box[idx] = output[0][index_best_box_in_output][4] * iou_with_target[
+                        index_best_box_in_correct_class]
+
+        return score_best_box.cpu().numpy()
 
 
-def fill_segmentation(values, segmentation):
-    out = np.zeros(segmentation.shape)
-    for i in range(len(values)):
-        out[segmentation == i] = values[i]
-    return out
 
 
-# plot our explanations
-fig, axes = pl.subplots(nrows=1, ncols=4, figsize=(12, 4))
-inds = top_preds[0]
-axes[0].imshow(img)
-axes[0].axis('off')
-max_val = np.max([np.max(np.abs(shap_values[i][:, :-1])) for i in range(len(shap_values))])
-for i in range(3):
-    m = fill_segmentation(shap_values[inds[i]][0], segments_slic)
-    axes[i + 1].set_title(feature_names[inds[i]])
-    axes[i + 1].imshow(img.convert('LA'), alpha=0.15)
-    im = axes[i + 1].imshow(m, cmap=cm, vmin=-max_val, vmax=max_val)
-    axes[i + 1].axis('off')
-cb = fig.colorbar(im, ax=axes.ravel().tolist(), label="SHAP value", orientation="horizontal", aspect=60)
-cb.outline.set_visible(False)
-pl.imsave("shap_explanation.png", fig)
+
+class SuperPixler(torch.nn.Module):
+    def __init__(self, image, super_pixel_width):
+        super(SuperPixler, self).__init__()
+
+        self.image = image.transpose(2, 0, 1)  # model expects images in BRG, not RGB, so transpose color channels
+        self.mean_color = self.image.mean()
+        self.image = np.expand_dims(self.image, axis=0)
+        self.image_width = image.shape[1]
+        self.super_pixel_width = super_pixel_width
+
+    def forward(self, x):
+        # In the forward step we accept the super pixel masks and transform them to a batch of images
+        pixeled_image = np.repeat(self.image.copy(), x.shape[0], axis=0)
+
+        for i, super_pixel in enumerate(x.T):
+            images_to_pixelate = [bool(p) for p in super_pixel]
+            x = (i * self.super_pixel_width // self.image_width) * self.super_pixel_width
+            y = i * self.super_pixel_width % self.image_width
+            pixeled_image[images_to_pixelate, :, x:x + self.super_pixel_width,
+            y:y + self.super_pixel_width] = self.mean_color
+
+        return pixeled_image
+
+
+
+def shap_result(img, img_gray, target, target_index, super_pixel_width, img_size, scoring):
+    # use Kernel SHAP to explain the detection
+    assert (img_size / super_pixel_width) % 1 == 0, "image width needs to be multiple of super pixel width"
+    n_super_pixel = int((img.shape[1] / super_pixel_width) ** 2)
+    super_pixler = SuperPixler(img, super_pixel_width=super_pixel_width)
+
+    numpy2torch_converter = CastNumpy()
+    numpy2torch_converter.forward(img.transpose(2, 0, 1))
+    super_pixel_model = torch.nn.Sequential(
+        super_pixler,
+        numpy2torch_converter,
+        model,
+        scoring
+    )
+
+    background_super_pixel = np.array([[1 for _ in range(n_super_pixel)]])
+    image_super_pixel = np.array([[0 for _ in range(n_super_pixel)]])
+    kernel_explainer = shap.KernelExplainer(super_pixel_model, background_super_pixel)
+
+    # Very large values for nsamples cause OOM errors depending on image and super pixel parameter. We combine batches of SHAP values to distribute the load.
+    collected_shap_values = np.zeros_like(background_super_pixel)
+
+    # take shap value with highest abs. value for each pixel from each batch
+    b = 10
+    for i in range(b):
+        print(f"{target_index}> {i / b:0.2%}")
+
+        shap_values = kernel_explainer.shap_values(image_super_pixel, nsamples=1000)
+        stacked_values = np.vstack([shap_values, collected_shap_values])
+        index_max_values = np.argmax(np.abs(stacked_values), axis=0)
+        collected_shap_values = stacked_values[index_max_values, range(shap_values.shape[1])]
+    print((collected_shap_values != 0).sum(), "non-zero shap values found")
+    # plot the found SHAP values. Expected value does not match due to merging of batches
+    shap.initjs()
+    shap.force_plot(kernel_explainer.expected_value, collected_shap_values, show=False, matplotlib=True).savefig(
+        '/content/feature' + str(target_index) + '.png')
+    # match super pixels back to image pixels
+    shap_to_pixel = collected_shap_values.reshape(img_size // super_pixel_width,
+                                                  img_size // super_pixel_width)  # reshape to square
+    shap_to_pixel = np.repeat(shap_to_pixel, super_pixel_width, axis=0)  # extend superpixles to the right
+    shap_to_pixel = np.repeat(shap_to_pixel, super_pixel_width, axis=1)  # and down
+    shap_to_pixel = shap_to_pixel / (
+                np.max(np.abs(collected_shap_values)) * 2) + 0.5  # center values between 0 and 1 for the colour map
+
+    return shap_to_pixel
+import os
+import torch
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+def over_all(path, img_size, confidence, iou, super_pixel_width, show_image_processing=0, show_yolo_result=0):
+    start = time.time()
+    img_org, img_pre, img_gray = image_processing(path, img_size, show_image_processing)
+    output, prediction = model_processing(img_pre, confidence, iou, show_yolo_result)
+    fig, ax = plt.subplots(1, output[0].shape[0], figsize=(output[0].shape[0] * 10, output[0].shape[0] * 10),
+                           squeeze=False)
+
+    # Create output directory if it doesn't exist
+    output_dir = 'output/explain/SHAP'
+    os.makedirs(output_dir, exist_ok=True)
+
+    for target_index in range(output[0].shape[0]):
+        target = output[0].cpu().numpy()[target_index, :]
+        scoring = OD2Score(target, conf_thresh=confidence, iou_thresh=iou)
+        numpy2torch_converter = CastNumpy()
+        shap_to_pixels = shap_result(img_pre, img_gray, target, target_index, super_pixel_width, img_size, scoring)
+
+        # Plot image and SHAP values for super pixels on top
+        ax[0][target_index].set_title("Super pixel contribution to target detection")
+        ax[0][target_index].imshow(img_gray, cmap="gray", alpha=0.8)
+        ax[0][target_index].imshow(shap_to_pixels, cmap=plt.cm.seismic, vmin=0, vmax=1, alpha=0.2)
+
+        # Add bounding box of target
+        label = f"{model.names[int(target[5])]}"
+        ax[0][target_index].text(target[0], target[1], label, color="green")
+        bbox = patches.Rectangle(target[:2], target[2] - target[0], target[3] - target[1], linewidth=1, edgecolor='g',
+                                 facecolor='none')
+        ax[0][target_index].add_patch(bbox)
+
+        # Save the figure
+        output_path = os.path.join(output_dir, f"{os.path.basename(path).split('.')[0]}_target_{target_index}.png")
+        plt.savefig(output_path)
+        end = time.time()
+        print(f'Time taken: {end - start}')
+    plt.close(fig)
+
+
+over_all('./data/gtFine/images/test/bonn/bonn_000000_000019_leftImg8bit.png',640,0.3,0.3,16,0,1)
