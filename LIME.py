@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage.segmentation import mark_boundaries
 import matplotlib as mpl
+
 mpl.rc('figure', max_open_warning = 0)
 
 
-detector1=None
+detector1= None
 
 # https://github.com/akshay-gupta123/Face-Mask-Detection
 
@@ -16,15 +17,26 @@ def lime_result(model_name,model, batch_predict,output_paths, paths, num_samples
     """
     Generate LIME explanations for a set of images using a specified model and prediction function.
 
-    Args:
-        model (str): The name of the model used for generating explanations.
-        batch_predict (function): The function used to predict the output for a batch of images.
-        paths (list): List of file paths to the images.
-        num_samples (int, optional): The number of samples to generate for LIME. Default is 200.
-        num_features (int, optional): The number of features to include in the explanation. Default is 10.
+    Parameters
+    ----------
+    model_name : str
+        The name of the model used for generating explanations.
+    model : YOLO
+        The YOLO model used for predictions.
+    batch_predict : function
+        The function used to predict the output for a batch of images.
+    output_paths : Path
+        The path to save the output images.
+    paths : list
+        List of file paths to the images.
+    num_samples : int, optional
+        The number of samples to generate for LIME. Default is 200.
+    num_features : int, optional
+        The number of features to include in the explanation. Default is 10.
 
-    Returns:
-        None
+    Returns
+    -------
+    None
     """
     global detector1
     # lime explainer
@@ -32,7 +44,7 @@ def lime_result(model_name,model, batch_predict,output_paths, paths, num_samples
     detector1 = model
     for i, path in enumerate(paths):
         img = Image.open(path)
-        img = img.resize((448,448))
+        img = img.resize((896,896))
 
         explanation = explainer.explain_instance(np.array(img), batch_predict, top_labels=5, hide_color=0,
                                                  num_samples=num_samples)
@@ -54,15 +66,19 @@ def lime_result(model_name,model, batch_predict,output_paths, paths, num_samples
 
 def Yolo_sum(images):
     """
-    Summarize YOLO model predictions for a batch of images.
+    Summarize YOLO model predictions for a batch of images with multiple confidence scores.
 
-    This function processes a list of images using a YOLO model and calculates the average confidence score for each image. The results are returned as an array of predictions.
+    This function processes a list of images using a YOLO model and calculates multiple confidence scores for each image. The results are returned as an array of predictions.
 
-    Args:
-        images (list): List of images to be processed.
+    Parameters
+    ----------
+    images : list
+        List of images to be processed.
 
-    Returns:
-        np.ndarray: Array of predictions, where each prediction is a list containing the average confidence score and its complement.
+    Returns
+    -------
+    np.ndarray
+        Array of predictions, where each prediction is a list containing multiple confidence scores and their complements.
     """
     global detector1
     pred = []
@@ -88,11 +104,15 @@ def Yolo_multi(images):
 
     This function processes a list of images using a YOLO model and calculates multiple confidence scores for each image. The results are returned as an array of predictions.
 
-    Args:
-        images (list): List of images to be processed.
+    Parameters
+    ----------
+    images : list
+        List of images to be processed.
 
-    Returns:
-        np.ndarray: Array of predictions, where each prediction is a list containing multiple confidence scores and their complements.
+    Returns
+    -------
+    np.ndarray
+        Array of predictions, where each prediction is a list containing multiple confidence scores and their complements.
     """
     pred = []
     for num, image in enumerate(images):

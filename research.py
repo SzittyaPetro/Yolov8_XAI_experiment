@@ -52,7 +52,7 @@ def image_processing(path, img_size, show_image_processing=0):
         plt.imshow(img_gray, cmap='gray', vmin=0, vmax=1)
         plt.show()
     return img_org, img, img_gray
-#img_org,img_pre,img_gray=image_processing('./data/gtFine/images/test/bonn/bonn_000000_000019_leftImg8bit.png',10*32,1)
+#img_org,img_pre,img_gray=image_processing('./data/gtFine-seg/images/test/bonn/bonn_000000_000019_leftImg8bit.png',10*32,1)
 
 
 def model_processing(img, confidence, iou, show_yolo_result=0):
@@ -264,4 +264,4 @@ def over_all(path, img_size, confidence, iou, super_pixel_width, show_image_proc
     plt.close(fig)
 
 
-over_all('./data/gtFine/images/test/bonn/bonn_000000_000019_leftImg8bit.png',640,0.3,0.3,16,0,1)
+over_all('data/gtFine-seg/images/test/bonn/bonn_000000_000019_leftImg8bit.png', 640, 0.3, 0.3, 16, 0, 1)

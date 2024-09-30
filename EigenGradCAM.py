@@ -1,6 +1,3 @@
-# https://github.com/jacobgil/pytorch-grad-cam
-# https://github.com/Spritan/YOLOv8_Explainer
-
 import os
 import shutil
 from typing import List, Optional, Tuple, Union
@@ -16,7 +13,7 @@ from MEigenCAM.yolov8_cam.utils.image import scale_cam_image, show_cam_on_image
 from ultralytics.nn.tasks import attempt_load_weights
 from ultralytics.utils.ops import non_max_suppression, xywh2xyxy
 
-from MEigenCAM.yolov8_cam.utils.utils import letterbox
+from utils.general import letterbox
 
 
 class ActivationsAndGradients:
@@ -173,7 +170,7 @@ class yolov8_heatmap:
         layer=[12, 17, 21],
         conf_threshold=0.2,
         ratio=0.02,
-        show_box=False,
+        show_box=True,
         renormalize=False,
     ) -> None:
         """
@@ -192,8 +189,7 @@ class yolov8_heatmap:
         target = yolov8_target(backward_type, conf_threshold, ratio)
         target_layers = [model.model[l] for l in layer]
 
-        method = eval(method)(model, target_layers,
-                              )
+        method = eval(method)(model, target_layers)
         method.activations_and_grads = ActivationsAndGradients(
             model, target_layers, None)
 

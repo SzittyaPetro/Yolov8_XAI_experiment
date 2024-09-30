@@ -5,7 +5,7 @@ import os
 model = YOLO('yolov8m-seg.pt')  # load an official model
 
 # Predict with the model
-results = model.predict('D:/Uni/Yolov8/data/gtFine/val/Img/munster/', save=True, imgsz=2040,
+results = model.predict('D:/Uni/Yolov8/data/gtFine-seg/val/Img/munster/', save=True, imgsz=2040,
                         conf=0.5)  # predict on an image
 
 # Save the predicted image

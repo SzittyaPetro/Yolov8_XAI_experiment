@@ -1,7 +1,7 @@
-path: D:/Uni/Yolov8/data/gtFine
-train: ./train.txt
-val: ./val.txt
-test: ./test.txt
+path: D:/Uni/Yolov8/data/gtFine-seg
+train: D:\Repos\yolov8_XAI\Yolov8_XAI_experiment\data\gtFine\train.txt
+val: D:\Repos\yolov8_XAI\Yolov8_XAI_experiment\data\gtFine\val.txt
+test: D:\Repos\yolov8_XAI\Yolov8_XAI_experiment\data\gtFine\test.txt
 
 # class names
 names: 

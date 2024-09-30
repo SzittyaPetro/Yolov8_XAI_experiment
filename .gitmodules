@@ -4,3 +4,6 @@
 [submodule "myshap/shap"]
 	path = myshap/shap
 	url = https://github.com/SzittyaPetro/Yolov8_XAI_experiment.git
+[submodule "Doc/thesis-latex"]
+	path = Doc/thesis-latex
+	url = https://github.com/SzittyaPetro/thesis-latex.git

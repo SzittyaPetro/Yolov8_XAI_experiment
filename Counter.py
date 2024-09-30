@@ -27,15 +27,3 @@ def write_to_txt(filename, png_files):
         for png_file in png_files:
             f.write(png_file + '\n')
 
-
-# Mappa, amelyet be szeretnénk járni
-directory = 'D:/Uni/Yolov8/data/gtFine/images/'+purpose
-
-# Összegyűjti az összes .png fájlt a mappában és az alkönyvtárakban
-png_files = collect_png_files(directory)
-
-# Kiírja a .png fájlok listáját egy .txt fájlba
-output_file = str(Path(directory)) + ".txt"
-write_to_txt(output_file, png_files)
-
-print(f"All .png files have been collected and written to {output_file}.")
