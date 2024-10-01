@@ -3,15 +3,61 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any
 
-class Classes(Enum):
+class CityClasses(Enum):
+    """
+    Enum class for Cityscapes classes.
+    """
     PERSON = 0
     RIDER = 1
-    BICYCLE = 1
-    CAR = 2
-    MOTORCYCLE = 3
+    BICYCLE = 2
+    CAR = 3
+    MOTORCYCLE = 4
     BUS = 5
     ONRAILS = 6
     TRUCK = 7
+    EGO_VEHICLE = 8
+
+
+
+
+
+class YoloClasses(Enum):
+    """
+    Enum class for YOLO classes.
+    """
+    small_vehicle = 0
+    person = 1
+    large_vehicle = 2
+    two_wheeler = 3
+    On_rails = 4
+
+    def __str__(self):
+        return self.name
+    def __int__(self):
+        return self.value
+
+    @staticmethod
+    def from_CityClasses(city_class):
+        """
+        Convert CityClasses to YoloClasses.
+        Returns
+        -------
+
+        """
+        if city_class == CityClasses.PERSON.value or city_class == CityClasses.RIDER.value:
+            return YoloClasses.person
+        elif city_class == CityClasses.MOTORCYCLE.value or city_class == CityClasses.BICYCLE.value:
+            return YoloClasses.two_wheeler
+        elif city_class == CityClasses.CAR.value or city_class == CityClasses.EGO_VEHICLE.value:
+            return YoloClasses.small_vehicle
+        elif city_class == CityClasses.BUS.value or city_class == CityClasses.TRUCK.value:
+            return YoloClasses.large_vehicle
+        elif city_class == CityClasses.ONRAILS.value:
+            return YoloClasses.On_rails
+        else:
+            return 254
+
+
 project_root = Path(__file__).resolve().parent
 
 def convert_to_coco_table(cityscapes_data: Dict[str, Any]) -> List[str]:
@@ -47,11 +93,11 @@ def convert_to_coco_table(cityscapes_data: Dict[str, Any]) -> List[str]:
         pos_x = (min_x + max_x) / (2 * 2048)
         pos_y = (min_y + max_y) / (2 * 1024)
 
-        item_id = next((clas.value for clas in Classes if label.lower().find(clas.name.lower()) != -1), 255)
+        item_id = next((clas.value for clas in CityClasses if label.lower().replace(" ","_").find(clas.name.lower()) != -1), 255)
         item_id = obj.get('id', item_id)
 
         if item_id != 255:
-            coco_table.append(f"{item_id} {pos_x} {pos_y} {width} {height}")
+            coco_table.append(f"{int(YoloClasses.from_CityClasses(item_id))} {pos_x} {pos_y} {width} {height}")
 
     return coco_table
 
@@ -89,9 +135,9 @@ def convert_cityscapes_to_coco(item: Path) -> None:
     with open(coco_filepath, 'w') as f:
         f.write('\n'.join(coco_data) + '\n')
 
-    txt = project_root / f"{action}.txt"
+    txt = project_root.parent/"data/gtFine" / f"{action}.txt"
     with open(txt, 'a') as w:
-        w.write(f"{project_root}/images/{action}/{city}/{coco_filepath.stem}.png\n")
+        w.write(f"{project_root.parent}/data/gtFine/images/{action}/{city}/{coco_filepath.stem}.png\n")
 
 def process_folders(root_path: Path) -> None:
     """
@@ -117,4 +163,4 @@ def process_folders(root_path: Path) -> None:
 
 
 # Example usage:
-process_folders(project_root.parent/ 'data/gtFine/images')
+process_folders(project_root.parent/ 'data/gtFine/images_natur')
