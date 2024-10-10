@@ -3,6 +3,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import logging
+from torch.backends.mkl import verbose
 from ultralytics import YOLO
 from MEigenCAM.yolov8_cam import EigenCAM, EigenGradCAM
 from MEigenCAM.yolov8_cam.utils.image import show_cam_on_image  # noqa
@@ -114,7 +115,7 @@ def process_eigen_cam(file_path,output_dir, model)-> None:
                 cam_image = show_cam_on_image(img, grayscale_cam, use_rgb=True)
 
                 # Create output directory for each class
-                output = output_dir / f"{file_path.name}layer-{i}" / f"class-{class_id}"
+                output = output_dir / f"{file_path.name}layer-{i}"
                 output.mkdir(parents=True, exist_ok=True)
 
                 # Save the CAM image
@@ -171,12 +172,21 @@ def process_EigenGradCAM(file_path, output_dir, model)->None:
       cv2.imwrite(str(output_file_path), visualization)
 
 
-def process_image(file_path: Path,output_dir: Path, model):
+def process_image(file_path: Path,output_dir: Path, model,weight_path,lime=False,shap=False,eigengradcam=True, eigencam=False)-> None:
     """
     Process the image and generate explanations using both EigenCAM and LIME. The explanations are saved in the explain_output directory.
 
     Parameters
     ----------
+    eigencam : bool
+        Flag for using EigenCAM explanations.
+    eigengradcam : bool
+        Flag for using EigenGradCAM explanations.
+    shap : bool
+        Flag for using SHAP explanations.
+    lime : bool
+        Flag for using LIME explanations.
+    Eig
     file_path : Path
         Path to the image file.
     output_dir : Path
@@ -188,36 +198,38 @@ def process_image(file_path: Path,output_dir: Path, model):
     -------
     None
     """
+    if lime:
+        lime_output= output_dir/ "LIME/"
+        lime_output.mkdir(parents=True, exist_ok=True)
+        # Process LIME
+        lime_result(model=model,model_name=model.model_name, batch_predict=Yolo_sum, output_paths=lime_output, paths=[file_path], num_samples=500,num_features=10)
+        lime_result(model=model,model_name=model.model_name, batch_predict=Yolo_multi, output_paths=lime_output, paths=[file_path],
+                num_samples=500, num_features=20)
+    if shap:
+        shap_output= output_dir/ "SHAP/"
+        shap_output.mkdir(parents=True, exist_ok=True)
+        explain_image_with_shap(file_path,"D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-box.onnx")
+        if not Path("D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-box.onnx").exists():
+            model.export( format="onnx" )
+        explain_image_with_shap(file_path, "D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-box.onnx")
+    if eigengradcam:
+        gradcam_output= output_dir/ f"EigenGradCAM/{file_path.parts[-2]}"
+        gradcam_output.mkdir(parents=True, exist_ok=True)
+        eigengradcammodel = yolov8_heatmap(
+            #weight="D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-14870.pt",
+            weight=weight_path,
+            method="EigenGradCAM",
+        )
+        imagelist = eigengradcammodel(
+            img_path=str(file_path),
 
-    lime_output= output_dir/ "LIME/"
-    lime_output.mkdir(parents=True, exist_ok=True)
-    # Process LIME
-    lime_result(model=model,model_name=model.model_name, batch_predict=Yolo_sum, output_paths=lime_output, paths=[file_path], num_samples=200,num_features=10)
-    lime_result(model=model,model_name=model.model_name, batch_predict=Yolo_multi, output_paths=lime_output, paths=[file_path],
-                num_samples=200, num_features=10)
-    shap_output= output_dir/ "SHAP/"
-    shap_output.mkdir(parents=True, exist_ok=True)
-    #explain_image_with_shap(file_path,"D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-14870.onnx")
-    #if not Path("D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/yolov8m.onnx").exists():
-        #model.export( format="onnx" )
-    #explain_image_with_shap(file_path, "D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/yolov8m.onnx")
-
-    gradcam_output= output_dir/ "GradCAM/"
-    gradcam_output.mkdir(parents=True, exist_ok=True)
-    eigengradcammodel = yolov8_heatmap(
-        #weight="D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/best-14870.pt",
-        weight="D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/models/yolov8m.pt",
-        method="EigenGradCAM",
-    )
-    imagelist = eigengradcammodel(
-        img_path=str(file_path),
-
-    )
-    save_images(file_path,imagelist,output_dir=gradcam_output)
-    eigencam_output= output_dir/ "EigenGRADCAM/"
-    eigencam_output.mkdir(parents=True, exist_ok=True)
-    # Process EigenCAM
-    process_eigen_cam(file_path,eigencam_output, model)
+        )
+        save_images(imagelist,output_dir=gradcam_output)
+    if eigencam:
+        eigencam_output= output_dir/ "EigenCAM/"
+        eigencam_output.mkdir(parents=True, exist_ok=True)
+        # Process EigenCAM
+        process_eigen_cam(file_path,eigencam_output, model)
 
 
 
@@ -236,11 +248,11 @@ def main(arguments):
     """
     # Specify whether to use the local model or download from Comet.ml
     if arguments.use_remote_model:
-        model_file_path = download_model("gpludwOtJhDm2xDtgBjk5o9LT", "szittyapetro", "yolov8", "semantic_desert_6002",
+        model_file_path = download_model("gpludwOtJhDm2xDtgBjk5o9LT", "szittyapetro", "yolov8", "defensive-wok",
                                          "best.pt")
         model = YOLO(model_file_path)
     else:
-        model = YOLO("models/yolov8m.pt")
+        model = YOLO("models/best-box.pt", task="detect", verbose=False)
     # Specify the output directory
     output_dir = Path("./output/explain")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -262,7 +274,7 @@ def main(arguments):
             continue
 
         logging.info(f"Processing file {file_path}...")
-        process_image(file_path,output_dir, model)
+        process_image(file_path,output_dir, model,"models/best-box.pt")
 
 
 def parse_args():

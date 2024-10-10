@@ -1,6 +1,6 @@
 import comet_ml
 from ultralytics import YOLO
-# Load a model
+
 import torch
 
 # train the model
@@ -12,7 +12,7 @@ if __name__ == '__main__':
         data = "./descriptors/gtFine_descriptor.yaml",
         project = "yolov8",
         name = "bbox",
-        batch = 4,
+        batch = 3,
         epochs = 30,
         imgsz = 1024,
         device='0'

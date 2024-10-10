@@ -181,7 +181,7 @@ class yolov8_heatmap:
         ckpt = torch.load(weight)
         model_names = ckpt['model'].names
         model = attempt_load_weights(weight, device)
-        model.info()
+        #model.info()
         for p in model.parameters():
             p.requires_grad_(True)
         model.eval()
@@ -207,6 +207,13 @@ class yolov8_heatmap:
         Returns:
             numpy.ndarray: The filtered detections.
         """
+
+        # Ensure result is in the correct format [N, 6]
+        if result.ndimension() == 4:
+            # Reshape to [batch_size, num_boxes, num_classes + 4]
+            result = result.view(result.size(0), -1, result.size(-1))
+
+
         result = non_max_suppression(
             result, conf_thres=self.conf_threshold, iou_thres=0.80)[0]
         return result
@@ -296,7 +303,8 @@ class yolov8_heatmap:
             print(e)
             return
         grayscale_cam = grayscale_cam[0, :]
-
+        self.model.train()
+        torch.set_grad_enabled(True)
         pred1 = self.model(tensor)[0]
         pred = self.post_process(pred1)
         if self.renormalize:

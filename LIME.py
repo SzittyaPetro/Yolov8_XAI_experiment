@@ -5,11 +5,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage.segmentation import mark_boundaries
 import matplotlib as mpl
-
 mpl.rc('figure', max_open_warning = 0)
+import os
+import sys
+from contextlib import contextmanager
 
-
-detector1= None
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, 'w') as devnull:
+        old_stdout = sys.stdout
+        try:
+            sys.stdout = devnull
+            yield
+        finally:
+            sys.stdout = old_stdout
+detector1=None
 
 # https://github.com/akshay-gupta123/Face-Mask-Detection
 
@@ -45,9 +55,9 @@ def lime_result(model_name,model, batch_predict,output_paths, paths, num_samples
     for i, path in enumerate(paths):
         img = Image.open(path)
         img = img.resize((896,896))
-
-        explanation = explainer.explain_instance(np.array(img), batch_predict, top_labels=5, hide_color=0,
-                                                 num_samples=num_samples)
+        with suppress_stdout():
+            explanation = explainer.explain_instance(np.array(img), batch_predict, top_labels=5, hide_color=0,
+                                                     num_samples=num_samples)
 
         temp, mask = explanation.get_image_and_mask(explanation.top_labels[0], positive_only=True,
                                                     num_features=num_features, hide_rest=False)
@@ -60,7 +70,9 @@ def lime_result(model_name,model, batch_predict,output_paths, paths, num_samples
         f, axarr = plt.subplots(1, 2)
         axarr[0].imshow(img_boundry1)
         axarr[1].imshow(img_boundry2)
-        output= f'{output_paths}/{Path(model_name).name}_{Path(path).name}.jpg'
+        outputdir = (output_paths/batch_predict.__name__)
+        outputdir.mkdir(parents=True, exist_ok=True)
+        output= f'{outputdir/model_name.split('/')[1].split('.')[0]}_{Path(path).name}.jpg'
         plt.savefig(output)
 
 
@@ -84,7 +96,8 @@ def Yolo_sum(images):
     pred = []
     for image in images:
         sum = 0
-        logits = detector1(image)
+        with suppress_stdout():
+            logits = detector1(image)[0].cpu()
         if isinstance(logits, list):
             logits = logits[0]  # Assuming the first element is the `Results` object
         boxes = logits.boxes
@@ -117,13 +130,14 @@ def Yolo_multi(images):
     pred = []
     for num, image in enumerate(images):
         results = []
-        logits = detector1(image)
+        with suppress_stdout():
+            logits = detector1(image)
         if isinstance(logits, list):
             logits = logits[0]  # Assuming the first element is the `Results` object
         boxes = logits.boxes
         if boxes is not None:
             conf_scores = boxes.conf  # Access the confidence scores
-            result = np.array(conf_scores)
+            result = np.array(conf_scores.cpu())
             for i in result:
                 results.append(i)
                 results.append(1 - i)

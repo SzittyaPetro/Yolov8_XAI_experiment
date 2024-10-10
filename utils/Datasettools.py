@@ -15,7 +15,6 @@ class CityClasses(Enum):
     BUS = 5
     ONRAILS = 6
     TRUCK = 7
-    EGO_VEHICLE = 8
 
 
 
@@ -45,15 +44,15 @@ class YoloClasses(Enum):
 
         """
         if city_class == CityClasses.PERSON.value or city_class == CityClasses.RIDER.value:
-            return YoloClasses.person
+            return YoloClasses.person.value
         elif city_class == CityClasses.MOTORCYCLE.value or city_class == CityClasses.BICYCLE.value:
-            return YoloClasses.two_wheeler
-        elif city_class == CityClasses.CAR.value or city_class == CityClasses.EGO_VEHICLE.value:
-            return YoloClasses.small_vehicle
+            return YoloClasses.two_wheeler.value
+        elif city_class == CityClasses.CAR.value:
+            return YoloClasses.small_vehicle.value
         elif city_class == CityClasses.BUS.value or city_class == CityClasses.TRUCK.value:
-            return YoloClasses.large_vehicle
+            return YoloClasses.large_vehicle.value
         elif city_class == CityClasses.ONRAILS.value:
-            return YoloClasses.On_rails
+            return YoloClasses.On_rails.value
         else:
             return 254
 

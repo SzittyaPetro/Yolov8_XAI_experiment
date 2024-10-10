@@ -1,3 +1,4 @@
+
 import random
 from glob import glob
 import torch
@@ -8,15 +9,14 @@ import shap
 import torchvision
 import cv2
 from utils.general import non_max_suppression, box_iou
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-import time
-from ultralytics import YOLO
+device = torch.device('cuda:0')
+from IPython.display import clear_output
 
 def rgb2gray(rgb):
     return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
 
-model = YOLO("./models/yolov8m.pt").float()
 
+model = torch.load("models/best-box.pt", map_location=device, )['model'].float()
 
 
 def image_processing(path, img_size, show_image_processing=0):
@@ -52,30 +52,14 @@ def image_processing(path, img_size, show_image_processing=0):
         plt.imshow(img_gray, cmap='gray', vmin=0, vmax=1)
         plt.show()
     return img_org, img, img_gray
-#img_org,img_pre,img_gray=image_processing('./data/gtFine-seg/images/test/bonn/bonn_000000_000019_leftImg8bit.png',10*32,1)
+
+#img_org,img_pre,img_gray=image_processing('./data/gtFine/images/test/bonn/bonn_000035_000019_leftImg8bit.png',10*32,1)
 
 
 def model_processing(img, confidence, iou, show_yolo_result=0):
     torch_image = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1))).to(device).unsqueeze(0)
-    prediction = model(torch_image)  # This will return a Results object in YOLOv8
-
-    # Extract the necessary information (bounding boxes and class predictions) from Results object
-    boxes = prediction[0].boxes  # This will contain the bounding box information
-    if boxes is None:
-        return None, None
-
-    # Extract the tensor containing the bounding boxes and their respective scores
-    box_tensor = boxes.xyxy  # [x1, y1, x2, y2] format
-    conf_tensor = boxes.conf  # Confidence scores
-    class_tensor = boxes.cls  # Class predictions
-
-    # Convert the Results object to a format suitable for non-max suppression
-    # Stack box coordinates, confidence, and class predictions
-    prediction_tensor = torch.cat((box_tensor, conf_tensor.unsqueeze(1), class_tensor.unsqueeze(1)), dim=1)
-
-    # Run non-max suppression on the extracted bounding boxes
-    output = non_max_suppression(prediction_tensor, conf_thres=confidence, iou_thres=iou)
-
+    prediction = model(torch_image.float())
+    output = non_max_suppression(prediction[0], conf_thres=confidence, iou_thres=iou)
     if show_yolo_result:
         fig = plt.figure(figsize=(15, 15))
         ax = fig.add_subplot(1, 1, 1)
@@ -91,6 +75,11 @@ def model_processing(img, confidence, iou, show_yolo_result=0):
 
     return output, prediction
 
+
+
+#output,prediction=model_processing(img_pre,0.3,0.3,1)
+
+
 class CastNumpy(torch.nn.Module):
     def __init__(self):
         super(CastNumpy, self).__init__()
@@ -104,7 +93,7 @@ class CastNumpy(torch.nn.Module):
         return image
 
 
-
+numpy2torch_converter = CastNumpy()
 
 
 class OD2Score(torch.nn.Module):
@@ -116,22 +105,12 @@ class OD2Score(torch.nn.Module):
 
     def forward(self, x):
         # In the forward function we accept the predictions and return the score for a selected target of the box
-        score_best_box = torch.zeros([len(x)], device=device)
+        score_best_box = torch.zeros([x[0].shape[0]], device=device)
 
-        for idx, prediction in enumerate(x):
-            boxes = prediction.boxes  # Access the bounding boxes
-            if boxes is None:
-                continue
+        for idx, img in enumerate(x[0]):
+            img = img.unsqueeze(0)
 
-            # Extract the tensor containing the bounding boxes and their respective scores
-            box_tensor = boxes.xyxy  # [x1, y1, x2, y2] format
-            conf_tensor = boxes.conf  # Confidence scores
-            class_tensor = boxes.cls  # Class predictions
-
-            # Convert the Results object to a format suitable for non-max suppression
-            prediction_tensor = torch.cat((box_tensor, conf_tensor.unsqueeze(1), class_tensor.unsqueeze(1)), dim=1)
-
-            output = non_max_suppression(prediction_tensor, conf_thres=self.conf_thresh, iou_thres=self.iou_thresh)
+            output = non_max_suppression(img, conf_thres=self.conf_thresh, iou_thres=self.iou_thresh)
             if output and output[0] is not None:
                 correct_class_predictions = output[0][..., 5] == self.target[5]
                 correctly_labeled_boxes = output[0][correct_class_predictions]
@@ -147,9 +126,6 @@ class OD2Score(torch.nn.Module):
                         index_best_box_in_correct_class]
 
         return score_best_box.cpu().numpy()
-
-
-
 
 
 class SuperPixler(torch.nn.Module):
@@ -183,8 +159,6 @@ def shap_result(img, img_gray, target, target_index, super_pixel_width, img_size
     n_super_pixel = int((img.shape[1] / super_pixel_width) ** 2)
     super_pixler = SuperPixler(img, super_pixel_width=super_pixel_width)
 
-    numpy2torch_converter = CastNumpy()
-    numpy2torch_converter.forward(img.transpose(2, 0, 1))
     super_pixel_model = torch.nn.Sequential(
         super_pixler,
         numpy2torch_converter,
@@ -208,6 +182,7 @@ def shap_result(img, img_gray, target, target_index, super_pixel_width, img_size
         stacked_values = np.vstack([shap_values, collected_shap_values])
         index_max_values = np.argmax(np.abs(stacked_values), axis=0)
         collected_shap_values = stacked_values[index_max_values, range(shap_values.shape[1])]
+    clear_output()
     print((collected_shap_values != 0).sum(), "non-zero shap values found")
     # plot the found SHAP values. Expected value does not match due to merging of batches
     shap.initjs()
@@ -222,10 +197,10 @@ def shap_result(img, img_gray, target, target_index, super_pixel_width, img_size
                 np.max(np.abs(collected_shap_values)) * 2) + 0.5  # center values between 0 and 1 for the colour map
 
     return shap_to_pixel
-import os
-import torch
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+
+
+
+import time
 
 def over_all(path, img_size, confidence, iou, super_pixel_width, show_image_processing=0, show_yolo_result=0):
     start = time.time()
@@ -234,17 +209,15 @@ def over_all(path, img_size, confidence, iou, super_pixel_width, show_image_proc
     fig, ax = plt.subplots(1, output[0].shape[0], figsize=(output[0].shape[0] * 10, output[0].shape[0] * 10),
                            squeeze=False)
 
-    # Create output directory if it doesn't exist
-    output_dir = 'output/explain/SHAP'
-    os.makedirs(output_dir, exist_ok=True)
+    target_index = 8
+    target = output[0].cpu().numpy()[target_index, :]  # select a target from the output
 
     for target_index in range(output[0].shape[0]):
         target = output[0].cpu().numpy()[target_index, :]
         scoring = OD2Score(target, conf_thresh=confidence, iou_thresh=iou)
         numpy2torch_converter = CastNumpy()
         shap_to_pixels = shap_result(img_pre, img_gray, target, target_index, super_pixel_width, img_size, scoring)
-
-        # Plot image and SHAP values for super pixels on top
+        # plot image and shap values for super pixels on top
         ax[0][target_index].set_title("Super pixel contribution to target detection")
         ax[0][target_index].imshow(img_gray, cmap="gray", alpha=0.8)
         ax[0][target_index].imshow(shap_to_pixels, cmap=plt.cm.seismic, vmin=0, vmax=1, alpha=0.2)
@@ -255,13 +228,8 @@ def over_all(path, img_size, confidence, iou, super_pixel_width, show_image_proc
         bbox = patches.Rectangle(target[:2], target[2] - target[0], target[3] - target[1], linewidth=1, edgecolor='g',
                                  facecolor='none')
         ax[0][target_index].add_patch(bbox)
-
-        # Save the figure
-        output_path = os.path.join(output_dir, f"{os.path.basename(path).split('.')[0]}_target_{target_index}.png")
-        plt.savefig(output_path)
         end = time.time()
-        print(f'Time taken: {end - start}')
-    plt.close(fig)
+        print(f'Time taken: {end-start}')
 
 
-over_all('data/gtFine-seg/images/test/bonn/bonn_000000_000019_leftImg8bit.png', 640, 0.3, 0.3, 16, 0, 1)
+over_all('D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/data/gtFine/images/test/bonn/bonn_000035_000019_leftImg8bit.png',320,0.3,0.3,16,0,1)
