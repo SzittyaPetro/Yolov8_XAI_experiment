@@ -101,7 +101,7 @@ def process_eigen_cam(file_path,output_dir, model)-> None:
     img = np.float32(img) / 255
     num_classes = model.model.model[-1].nc  # Get the number of classes from the model
 
-    for i in range(2, 7):
+    for i in range(1, 7):
         target_layers = [model.model.model[-i]]
         for class_id in range(num_classes):
 
@@ -175,7 +175,7 @@ def process_EigenGradCAM(file_path, output_dir, model)->None:
       cv2.imwrite(str(output_file_path), visualization)
 
 
-def process_image(file_path: Path,output_dir: Path, model,weight_path,lime=False,shap=False,eigengradcam=True, eigencam=False)-> None:
+def process_image(file_path: Path,output_dir: Path, model,weight_path,lime=False,shap=False,eigengradcam=False, eigencam=True)-> None:
     """
     Process the image and generate explanations using both EigenCAM and LIME. The explanations are saved in the explain_output directory.
 
