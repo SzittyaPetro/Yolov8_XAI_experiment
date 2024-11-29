@@ -5,7 +5,7 @@ import os
 model = YOLO('./models/best-box.pt')  # load an official model
 
 # Predict with the model
-results = model.predict('D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/data/gtFine/images/test/bonn/bonn_000035_000019_leftImg8bit.png', save=True, imgsz=2040,
+results = model.predict('D:/Repos/yolov8_XAI/Yolov8_XAI_experiment/data/gtFine/test.txt', save=True, imgsz=2040,
                         conf=0.5)  # predict on an image
 
 # Save the predicted image

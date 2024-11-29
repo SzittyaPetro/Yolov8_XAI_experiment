@@ -6,6 +6,7 @@
 /Yolov8_XAI_experiment/test/
 /Yolov8_XAI_experiment/Yolov8/
 /venv/
+/zarovizsga/
 /runs/
 /data/
 output/
@@ -20,5 +21,6 @@ __pycache__/
 /Doc/
 /Yolov8/
 /models/
+*predict*
 
 

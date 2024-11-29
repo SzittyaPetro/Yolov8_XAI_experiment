@@ -101,7 +101,7 @@ def process_eigen_cam(file_path,output_dir, model)-> None:
     img = np.float32(img) / 255
     num_classes = model.model.model[-1].nc  # Get the number of classes from the model
 
-    for i in range(1, 7):
+    for i in range(2, 7):
         target_layers = [model.model.model[-i]]
         for class_id in range(num_classes):
 
@@ -119,7 +119,7 @@ def process_eigen_cam(file_path,output_dir, model)-> None:
                 output.mkdir(parents=True, exist_ok=True)
 
                 # Save the CAM image
-                output_file_path = output / f"{file_path.name}_object({class_id})_heatmap.jpg"
+                output_file_path = output / f"{file_path.name}_object({i})_heatmap.jpg"
                 success = cv2.imwrite(str(output_file_path), cam_image)
                 if not success:
                     logging.error(f"Failed to save image at {output_file_path}")
@@ -260,7 +260,7 @@ def main(arguments):
     output_dir = Path("./output/explain")
     output_dir.mkdir(parents=True, exist_ok=True)
     # Specify the directory
-    dir_path = Path('data/gtFine-seg/images/test/bonn')
+    dir_path = Path('data/Class-specific')
 
     # Get a list of all files in the directory
     file_names = dir_path.iterdir()
